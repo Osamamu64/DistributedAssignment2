@@ -4,12 +4,13 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.LinkedList;
+import java.util.ArrayDeque;
 import java.util.Queue;
+import java.util.concurrent.Semaphore;
 
 public class PrimaryServer {
-    private static Queue<Socket> requestQueue = new LinkedList<>();
-    private static boolean tokenAvailable = true;
+    private static Queue<ClientRequest> requestQueue = new ArrayDeque<>();
+    private static Semaphore tokenSemaphore = new Semaphore(1);
 
     public static void main(String[] args) {
         try {
@@ -27,7 +28,8 @@ public class PrimaryServer {
                 // Create a new thread to handle each client
                 Thread clientThread = new Connection(clientSocket, outBackup);
                 clientThread.start();
-                System.out.println("THIS IS REQUEST QUEUE----->" + requestQueue);
+                //System.out.println("THIS IS REQUEST QUEUE----->" + requestQueue.toString());
+   
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -35,36 +37,49 @@ public class PrimaryServer {
     }
 
     private static synchronized void handleTokenRequest(Socket clientSocket, DataOutputStream out) throws IOException {
-        if (tokenAvailable) {
+        if (tokenSemaphore.tryAcquire()) {
             // Grant token to the requesting client
-            tokenAvailable = false;
             out.writeUTF("TOKEN_GRANTED");
         } else {
             // Queue the request if the token is not available
-            requestQueue.offer(clientSocket);
+            ClientRequest request = new ClientRequest(clientSocket, out);
+            requestQueue.offer(request);
             out.writeUTF("TOKEN_DENIED");
         }
-        out.flush();
+        out.flush(); // Flush the output stream to ensure the data is sent
     }
 
     private static synchronized void handleTokenRelease() {
+        tokenSemaphore.release();
         if (!requestQueue.isEmpty()) {
             // Grant the token to the next client in the queue
-            Socket nextClient = requestQueue.poll();
+            ClientRequest nextRequest = requestQueue.poll();
             try {
-                DataOutputStream out = new DataOutputStream(nextClient.getOutputStream());
-                // Move the writeUTF outside the synchronized block
+                DataOutputStream out = nextRequest.getOutputStream();
                 out.writeUTF("TOKEN_GRANTED");
-                out.flush();
+                out.flush(); // Flush the output stream to ensure the data is sent
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        } else {
-            // No pending requests, token is available
-            tokenAvailable = true;
         }
     }
 
+   /*  private static synchronized String getRequestQueueAsString() {
+        StringBuilder sb = new StringBuilder("[");
+
+        for (ClientRequest request : requestQueue) {
+            sb.append(request.toString());
+            sb.append(", ");
+        }
+
+        if (!requestQueue.isEmpty()) {
+            sb.setLength(sb.length() - 2); // Remove the trailing ", "
+        }
+
+        sb.append("]");
+
+        return sb.toString();
+    }*/
 
     static class Connection extends Thread {
         Socket clientSocket;
@@ -85,8 +100,6 @@ public class PrimaryServer {
                         // Wait for client request
                         String request = in.readUTF();
 
-                        System.out.println("Received: " + request + " from: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
-
                         if (request.equals("REQUEST_TOKEN")) {
                             // Handle token request
                             handleTokenRequest(clientSocket, out);
@@ -94,29 +107,64 @@ public class PrimaryServer {
                             // Handle token release
                             handleTokenRelease();
                             break;
+                        } else {
+                            // Handle other requests from the client
+                            // ... (code for handling the specific requests)
                         }
 
                         // Forward the message to the backup server
                         String msg = clientSocket.getInetAddress() + ":" + clientSocket.getPort() + "," + request;
                         if (outBackup != null) {
                             outBackup.writeUTF(msg);
-                            outBackup.flush();
+                            outBackup.flush(); // Flush the output stream to ensure the data is sent
                         }
                     } catch (EOFException e) {
                         // Handle EOFException (connection closed)
                         System.out.println("Connection closed by the client: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+                        handleTokenRelease();
                         break;
                     }
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                if (e.getMessage().equals("Connection reset"))
+                {
+                    System.out.println("Connection closed by the client: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+                    
+                }
+                else
+                {
+                    e.printStackTrace();
+                }
             } finally {
                 try {
-                    clientSocket.close();
+                    clientSocket.close(); // Close the clientSocket
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
+        }
+    }
+
+    static class ClientRequest {
+        private Socket socket;
+        private DataOutputStream outputStream;
+
+        public ClientRequest(Socket socket, DataOutputStream outputStream) {
+            this.socket = socket;
+            this.outputStream = outputStream;
+        }
+
+        public Socket getSocket() {
+            return socket;
+        }
+
+        public DataOutputStream getOutputStream() {
+            return outputStream;
+        }
+
+        @Override
+        public String toString() {
+            return "ClientRequest [socket=" + socket + ", outputStream=" + outputStream + "]";
         }
     }
 }

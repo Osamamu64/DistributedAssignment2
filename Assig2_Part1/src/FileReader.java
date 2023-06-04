@@ -28,7 +28,7 @@ public class FileReader {
     }
 
     private static void getHashesFromFile() {
-        try (FileInputStream fileInputStream = new FileInputStream("C:\\Users\\abdul\\OneDrive\\Desktop\\SWE\\Assig2_Part1\\src\\sharedResource.txt");
+        try (FileInputStream fileInputStream = new FileInputStream("/Users/simbaa/Desktop/DistributedAssignment2/Assig2_Part1/src/sharedResource.txt");
              InputStreamReader inputStreamReader = new InputStreamReader(fileInputStream);
              BufferedReader reader = new BufferedReader(inputStreamReader)) {
             hashList.clear();

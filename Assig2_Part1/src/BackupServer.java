@@ -11,56 +11,41 @@ public class BackupServer {
     private static Queue<Socket> requestQueue = new LinkedList<>();
     private static boolean tokenAvailable = true;
     static Hashtable<String, String> clients = new Hashtable<String, String>();
-	static String[] data = null;
-	//static DataOutputStream outPrimary = null;
+    static String[] data = null;
 
     public static void main(String[] args) {
         try {
-        	
-        	System.out.println("Waiting for Primary to connect ... ");
-        	
-			/*ServerSocket listenSocket = new ServerSocket(50001);
-			Socket PrimarySocket = listenSocket.accept();
-			DataInputStream inPrimary = new DataInputStream(PrimarySocket.getInputStream());
-			System.out.println("Connected with Primary ... ");*/
-        	
-            // Connect to the primary server
-            //Socket primarySocket = new Socket(args[0], 50000);
-			ServerSocket serverSocket = new ServerSocket(50001);
-			Socket primarySocket = serverSocket.accept();
+            System.out.println("Waiting for Primary to connect...");
+
+            ServerSocket serverSocket = new ServerSocket(50001);
+            Socket primarySocket = serverSocket.accept();
             DataInputStream inPrimary = new DataInputStream(primarySocket.getInputStream());
             DataOutputStream outPrimary = new DataOutputStream(primarySocket.getOutputStream());
 
             // Listen for client connections
-            //ServerSocket serverSocket = new ServerSocket(50001);
             System.out.println("Backup Server is CONNECTED and waiting for client connections...");
 
             while (true) {
-                //Socket clientSocket = serverSocket.accept();
-            	
-            	String msg = inPrimary.readUTF();
-				data = msg.split(",");
-				clients.put(data[0], data[1]);
-
-                // Create a new thread to handle each client
-                //Thread clientThread = new Connection(clientSocket, inPrimary, outPrimary);
-                //clientThread.start();
+                String msg = inPrimary.readUTF();
+                data = msg.split(",");
+                clients.put(data[0], data[1]);
             }
         } catch (IOException e) {
-            //e.printStackTrace();
-        	System.out.println("-----------------------------------");
-        	System.out.println("Server Failed, Backup Takes Over...");
-      		int serverPort = 50000; // Backup behaving like a Primary
-      		
-      		try {
-      			ServerSocket listenSocket = new ServerSocket(serverPort);
-      			System.out.println("Backup Server is ready to takeover and waiting for requests ... ");
-      			while (true) {
-      				Socket clientSocket = listenSocket.accept();
-      				Thread clientThread = new Connection(clientSocket, data[1]);
-      				clientThread.start();
-      			}
-      		} catch(IOException ee) {System.out.println("Error Listen socket:"+ee.getMessage());}
+            System.out.println("-----------------------------------");
+            System.out.println("Server Failed, Backup Takes Over...");
+            int serverPort = 50002; // Use a different port number, e.g., 50002
+
+            try {
+                ServerSocket listenSocket = new ServerSocket(serverPort);
+                System.out.println("Backup Server is ready to take over and waiting for requests...");
+                while (true) {
+                    Socket clientSocket = listenSocket.accept();
+                    Thread clientThread = new Connection(clientSocket, data[1]);
+                    clientThread.start();
+                }
+            } catch (IOException ee) {
+                System.out.println("Error Listen socket: " + ee.getMessage());
+            }
         }
     }
 
@@ -69,12 +54,14 @@ public class BackupServer {
             // Grant token to the requesting client
             tokenAvailable = false;
             out.writeUTF("TOKEN_GRANTED");
-            out.flush();
+            out.flush(); // Ensure data is sent immediately
+            out.close();
         } else {
             // Queue the request if the token is not available
             requestQueue.offer(clientSocket);
             out.writeUTF("TOKEN_DENIED");
-            out.flush();
+            out.flush(); // Ensure data is sent immediately
+            out.close();
         }
     }
 
@@ -85,7 +72,8 @@ public class BackupServer {
             try {
                 DataOutputStream out = new DataOutputStream(nextClient.getOutputStream());
                 out.writeUTF("TOKEN_GRANTED");
-                out.flush();
+                out.flush(); // Ensure data is sent immediately
+                out.close();
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -103,7 +91,6 @@ public class BackupServer {
         public Connection(Socket clientSocket, String inPrimary) {
             this.clientSocket = clientSocket;
             this.inPrimary = inPrimary;
-            //this.outPrimary = outPrimary;
         }
 
         public void run() {
@@ -114,8 +101,7 @@ public class BackupServer {
                 while (true) {
                     // Wait for client request
                     String request = data[1];
-                    
-                    System.out.println("Received:"+ request + " from:" + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+                    System.out.println("Received: " + request + " from: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
 
                     if (request.equals("REQUEST_TOKEN")) {
                         // Handle token request
@@ -125,7 +111,6 @@ public class BackupServer {
                         handleTokenRelease();
                         break;
                     }
-                    //out.writeUTF(request);
                 }
             } catch (IOException e) {
                 e.printStackTrace();

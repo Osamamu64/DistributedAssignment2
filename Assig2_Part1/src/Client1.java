@@ -25,8 +25,9 @@ public class Client1 {
                     tokenGranted = true;
                     System.out.println("Token granted, performing the critical section...");
 
+                    // Read a hash from the file and start cracking
                     while (true) {
-                        // Read a hash from the file
+                        
                         String hash = FileReader.getHash();
                         if (hash != null) {
                             Thread.sleep(2000);
@@ -75,7 +76,7 @@ public class Client1 {
     }
 
     private static void writePasswordToFile(String password, int clientID) {
-        try (FileWriter writer = new FileWriter("C:\\Users\\abdul\\OneDrive\\Desktop\\SWE\\Assig2_Part1\\src\\crackedPasswords.txt", true)) {
+        try (FileWriter writer = new FileWriter("/Users/simbaa/Desktop/DistributedAssignment2/Assig2_Part1/src/crackedPasswords.txt", true)) {
             writer.write("Client ID: " + clientID + ", Password: " + password + System.lineSeparator());
         } catch (IOException e) {
             e.printStackTrace();

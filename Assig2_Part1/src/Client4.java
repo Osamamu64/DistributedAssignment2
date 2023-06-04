@@ -75,7 +75,7 @@ public class Client4 {
     }
 
     private static void writePasswordToFile(String password, int clientID) {
-        try (FileWriter writer = new FileWriter("C:\\Users\\abdul\\OneDrive\\Desktop\\SWE\\Assig2_Part1\\src\\crackedPasswords.txt", true)) {
+        try (FileWriter writer = new FileWriter("/Users/simbaa/Desktop/DistributedAssignment2/Assig2_Part1/src/crackedPasswords.txt", true)) {
             writer.write("Client ID: " + clientID + ", Password: " + password + System.lineSeparator());
         } catch (IOException e) {
             e.printStackTrace();

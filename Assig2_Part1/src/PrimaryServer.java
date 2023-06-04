@@ -9,27 +9,43 @@ import java.util.Queue;
 import java.util.concurrent.Semaphore;
 
 public class PrimaryServer {
+    public static final String[] args = null;
+
     private static Queue<ClientRequest> requestQueue = new ArrayDeque<>();
     private static Semaphore tokenSemaphore = new Semaphore(1);
+    private static volatile boolean isRunning = true;
+    private static DataOutputStream outBackup; // Make outBackup accessible globally
 
     public static void main(String[] args) {
         try {
             // Connect to the backup server
-            Socket backupSocket = new Socket(args[0], 50001);
-            DataOutputStream outBackup = new DataOutputStream(backupSocket.getOutputStream());
+            Socket backupSocket = new Socket(args[0], 50002);
+            outBackup = new DataOutputStream(backupSocket.getOutputStream());
+
+            // Start the backup listener thread
+            BackupListener backupListener = new BackupListener(backupSocket);
+            backupListener.start();
 
             // Listen for client connections
             ServerSocket serverSocket = new ServerSocket(50000);
             System.out.println("Primary Server is ready and waiting for client connections...");
 
-            while (true) {
+            // Add shutdown hook to handle termination gracefully
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                isRunning = false;
+                try {
+                    backupSocket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }));
+
+            while (isRunning) {
                 Socket clientSocket = serverSocket.accept();
 
                 // Create a new thread to handle each client
-                Thread clientThread = new Connection(clientSocket, outBackup);
+                Thread clientThread = new Connection(clientSocket);
                 clientThread.start();
-                //System.out.println("THIS IS REQUEST QUEUE----->" + requestQueue.toString());
-   
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -45,6 +61,13 @@ public class PrimaryServer {
             ClientRequest request = new ClientRequest(clientSocket, out);
             requestQueue.offer(request);
             out.writeUTF("TOKEN_DENIED");
+
+            // Forward the message to the backup server
+            String msg = clientSocket.getInetAddress() + ":" + clientSocket.getPort() + "," + "TOKEN_DENIED";
+            if (outBackup != null) {
+                outBackup.writeUTF(msg);
+                outBackup.flush(); // Flush the output stream to ensure the data is sent
+            }
         }
         out.flush(); // Flush the output stream to ensure the data is sent
     }
@@ -64,30 +87,11 @@ public class PrimaryServer {
         }
     }
 
-   /*  private static synchronized String getRequestQueueAsString() {
-        StringBuilder sb = new StringBuilder("[");
-
-        for (ClientRequest request : requestQueue) {
-            sb.append(request.toString());
-            sb.append(", ");
-        }
-
-        if (!requestQueue.isEmpty()) {
-            sb.setLength(sb.length() - 2); // Remove the trailing ", "
-        }
-
-        sb.append("]");
-
-        return sb.toString();
-    }*/
-
     static class Connection extends Thread {
         Socket clientSocket;
-        DataOutputStream outBackup;
 
-        public Connection(Socket clientSocket, DataOutputStream outBackup) {
+        public Connection(Socket clientSocket) {
             this.clientSocket = clientSocket;
-            this.outBackup = outBackup;
         }
 
         public void run() {
@@ -126,18 +130,60 @@ public class PrimaryServer {
                     }
                 }
             } catch (IOException e) {
-                if (e.getMessage().equals("Connection reset"))
-                {
+                if (e.getMessage().equals("Connection reset")) {
                     System.out.println("Connection closed by the client: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
-                    
-                }
-                else
-                {
+                } else {
                     e.printStackTrace();
                 }
             } finally {
                 try {
                     clientSocket.close(); // Close the clientSocket
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    static class BackupListener extends Thread {
+        Socket backupSocket;
+
+        public BackupListener(Socket backupSocket) {
+            this.backupSocket = backupSocket;
+        }
+
+        public void run() {
+            try {
+                DataInputStream in = new DataInputStream(backupSocket.getInputStream());
+
+                while (isRunning) {
+                    try {
+                        String message = in.readUTF();
+                        // Update the backup server based on the message received
+                        // ... (code to process the message and update the backup server)
+                        System.out.println("Received message from backup server: " + message);
+                    } catch (EOFException e) {
+                        // Handle EOFException (connection closed by the backup server)
+                        System.out.println("Connection closed by the backup server.");
+                        // Reconnect to the backup server
+                        try {
+                            backupSocket = new Socket(args[0], 50002);
+                            in = new DataInputStream(backupSocket.getInputStream());
+                            System.out.println("Reconnected to the backup server.");
+                        } catch (IOException ex) {
+                            System.out.println("Error connecting to backup server: " + ex.getMessage());
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                if (e.getMessage().equals("Connection reset")) {
+                    System.out.println("Connection closed by the backup server.");
+                } else {
+                    e.printStackTrace();
+                }
+            } finally {
+                try {
+                    backupSocket.close(); // Close the backupSocket
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
